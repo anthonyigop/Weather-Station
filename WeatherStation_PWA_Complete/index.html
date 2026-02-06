@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Weather Station">
+    <meta name="description" content="Low-Power Agricultural Weather Monitoring System">
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    
+    <title>Weather Station</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; overflow-x: hidden; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 12px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+        }
+        
+        /* Header */
+        .header { text-align: center; margin-bottom: 12px; }
+        .header img { width: 45px; height: 45px; border-radius: 10px; margin-bottom: 6px; }
+        .header h1 {
+            font-size: 1.3rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header p { color: #8892b0; font-size: 0.7rem; }
+        
+        /* Live Time */
+        .live-time { text-align: center; margin-bottom: 10px; }
+        .live-time .time { font-size: 1.8rem; font-weight: bold; color: #00d4ff; }
+        .live-time .date { color: #8892b0; font-size: 0.75rem; }
+        .live-time .last-update { color: #8892b0; font-size: 0.65rem; margin-top: 2px; }
+        
+        /* Status Bar */
+        .status-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin-bottom: 12px; }
+        .status-item {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 8px;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-dot.online { background: #00ff88; }
+        .status-dot.offline { background: #ff6b6b; }
+        .node-fallback { font-size: 0.55rem; color: #ffb86b; background: rgba(255,184,107,0.1); padding: 1px 4px; border-radius: 4px; }
+        
+        /* Alert & Error */
+        .alert-box, .error {
+            background: rgba(255,107,107,0.2);
+            border: 1px solid #ff6b6b;
+            padding: 8px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 0.75rem;
+        }
+        
+        /* Sensor Grid */
+        .sensor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+        .sensor-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .sensor-card .icon { font-size: 1.4rem; margin-bottom: 4px; }
+        .sensor-card .label { font-size: 0.55rem; color: #8892b0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sensor-card .value { font-size: 1.5rem; font-weight: bold; line-height: 1.2; }
+        .sensor-card .unit { font-size: 0.65rem; color: #8892b0; }
+        
+        .sensor-card.temp .value { color: #ff6b6b; }
+        .sensor-card.hum .value { color: #4ecdc4; }
+        .sensor-card.wind .value { color: #45b7d1; }
+        .sensor-card.dir .value { color: #a29bfe; font-size: 1.2rem; }
+        .sensor-card.rain .value { color: #96ceb4; }
+        .sensor-card.uv .value { color: #ffeaa7; }
+        
+        /* Compass */
+        .compass-container { position: relative; width: 45px; height: 45px; margin: 0 auto 4px; }
+        .compass {
+            width: 45px; height: 45px;
+            border: 2px solid #a29bfe;
+            border-radius: 50%;
+            position: relative;
+            background: rgba(162,155,254,0.1);
+        }
+        .compass-arrow {
+            position: absolute;
+            left: 50%;
+            bottom: 50%;
+            width: 4px;
+            height: 16px;
+            background: linear-gradient(to top, #ff6b6b 50%, #a29bfe 50%);
+            transform-origin: 50% 100%;
+            transform: translateX(-50%) rotate(0deg);
+            border-radius: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .compass-label { position: absolute; font-size: 0.45rem; color: #a29bfe; font-weight: bold; }
+        .compass-n { top: 2px; left: 50%; transform: translateX(-50%); }
+        .compass-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
+        .compass-e { right: 3px; top: 50%; transform: translateY(-50%); }
+        .compass-w { left: 3px; top: 50%; transform: translateY(-50%); }
+        
+        /* Signal Info */
+        .signal-info {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 6px;
+            text-align: center;
+            margin-bottom: 12px;
+            font-size: 0.7rem;
+            color: #8892b0;
+        }
+        
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 3px;
+            margin-bottom: 10px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 7px 4px;
+            border: none;
+            background: transparent;
+            color: #8892b0;
+            font-size: 0.65rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            color: #fff;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Charts */
+        .chart-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .chart-title { font-size: 0.75rem; color: #8892b0; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+        
+        /* Stats Grid */
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-card h4 { font-size: 0.6rem; color: #8892b0; margin-bottom: 5px; text-transform: uppercase; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 0.65rem; margin: 2px 0; }
+        .stat-row .label { color: #8892b0; }
+        .stat-row .value { font-weight: bold; }
+        .stat-row .value.high { color: #ff6b6b; }
+        .stat-row .value.low { color: #4ecdc4; }
+        .stat-row .value.avg { color: #ffeaa7; }
+        
+        /* Table */
+        .table-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        .table-header { margin-bottom: 8px; }
+        .table-title { font-size: 0.8rem; color: #8892b0; margin-bottom: 6px; }
+        .filter-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-bottom: 6px; }
+        .filter-row label { color: #8892b0; font-size: 0.65rem; }
+        .filter-row input[type="date"] {
+            padding: 5px;
+            border-radius: 5px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 0.65rem;
+            width: 105px;
+        }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.6rem; min-width: 480px; }
+        .data-table th {
+            background: rgba(255,255,255,0.1);
+            padding: 6px 3px;
+            text-align: center;
+            color: #8892b0;
+            font-size: 0.55rem;
+            text-transform: uppercase;
+        }
+        .data-table td { padding: 6px 3px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        
+        /* Buttons */
+        .btn-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0; }
+        .btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 18px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-primary { background: linear-gradient(90deg, #00d4ff, #7b2cbf); color: #fff; }
+        .btn-success { background: linear-gradient(90deg, #11998e, #38ef7d); color: #fff; }
+        .btn-danger { background: linear-gradient(90deg, #ff416c, #ff4b2b); color: #fff; }
+        .btn-secondary { background: linear-gradient(90deg, #636e72, #b2bec3); color: #fff; }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 12px;
+            color: #8892b0;
+            font-size: 0.65rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            margin-top: 12px;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 15px;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: #1a1a2e;
+            padding: 18px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 300px;
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal-content h3 { margin-bottom: 10px; color: #ff6b6b; font-size: 0.95rem; }
+        .modal-content p { color: #8892b0; margin-bottom: 12px; font-size: 0.75rem; }
+        .modal-buttons { display: flex; gap: 8px; justify-content: center; }
+        
+        /* Install Prompt */
+        .install-prompt {
+            display: none;
+            position: fixed;
+            bottom: 12px; left: 12px; right: 12px;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 999;
+        }
+        .install-prompt.show { display: block; }
+        .install-prompt p { margin-bottom: 6px; font-size: 0.75rem; }
+        .install-prompt button { padding: 6px 16px; border: none; border-radius: 12px; margin: 0 3px; font-size: 0.7rem; cursor: pointer; }
+        .install-prompt .install-btn { background: #fff; color: #1a1a2e; }
+        .install-prompt .dismiss-btn { background: rgba(255,255,255,0.2); color: #fff; }
+        
+        .loading { text-align: center; padding: 15px; color: #8892b0; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <img src="icon-192.png" alt="Logo" onerror="this.style.display='none'">
+        <h1>☁️ Weather Station</h1>
+        <p>Agricultural Weather Monitoring</p>
+    </div>
+    
+    <!-- Live Time -->
+    <div class="live-time">
+        <div class="time" id="liveTime">--:--:--</div>
+        <div class="date" id="liveDate">Loading...</div>
+        <div class="last-update">Last Update: <span id="lastUpdate">--:--:--</span></div>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item" id="connectionStatus">
+            <span class="status-dot offline"></span><span>Connecting...</span>
+        </div>
+        <div class="status-item" id="nodeStatus">
+            <span class="status-dot offline"></span><span>Node 1: --</span>
+        </div>
+        <div class="status-item">📦 <span id="totalRecords">0</span></div>
+    </div>
+    
+    <!-- Alert & Error -->
+    <div id="alertBox"></div>
+    <div id="errorContainer"></div>
+    
+    <!-- Sensor Cards -->
+    <div class="sensor-grid">
+        <div class="sensor-card temp">
+            <div class="icon">🌡️</div>
+            <div class="label">Temperature</div>
+            <div class="value" id="temperature">--</div>
+            <div class="unit">°C</div>
+        </div>
+        <div class="sensor-card hum">
+            <div class="icon">💧</div>
+            <div class="label">Humidity</div>
+            <div class="value" id="humidity">--</div>
+            <div class="unit">%</div>
+        </div>
+        <div class="sensor-card wind">
+            <div class="icon">💨</div>
+            <div class="label">Wind Speed</div>
+            <div class="value" id="windSpeed">--</div>
+            <div class="unit">m/s</div>
+        </div>
+        <div class="sensor-card dir">
+            <div class="icon">🧭</div>
+            <div class="label">Direction</div>
+            <div class="compass-container">
+                <div class="compass">
+                    <span class="compass-label compass-n">N</span>
+                    <span class="compass-label compass-s">S</span>
+                    <span class="compass-label compass-e">E</span>
+                    <span class="compass-label compass-w">W</span>
+                    <div class="compass-arrow" id="compassArrow"></div>
+                </div>
+            </div>
+            <div class="value" id="windDirection">--</div>
+            <div class="unit"><span id="windDegrees">--</span>°</div>
+        </div>
+        <div class="sensor-card rain">
+            <div class="icon">🌧️</div>
+            <div class="label">Total Rainfall</div>
+            <div class="value" id="totalRainfall">--</div>
+            <div class="unit">mm</div>
+        </div>
+        <div class="sensor-card uv">
+            <div class="icon">☀️</div>
+            <div class="label">UV Index</div>
+            <div class="value" id="uvIndex">--</div>
+            <div class="unit" id="uvLevel">--</div>
+        </div>
+    </div>
+    
+    <!-- Signal Info -->
+    <div class="signal-info">
+        📡 RSSI: <span id="rssi">--</span> dBm | SNR: <span id="snr">--</span> dB
+    </div>
+    
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+        <button class="tab-btn active" onclick="showTab('charts')">📊 Charts</button>
+        <button class="tab-btn" onclick="showTab('stats')">📈 Stats</button>
+        <button class="tab-btn" onclick="showTab('history')">📋 History</button>
+        <button class="tab-btn" onclick="showTab('more')">⚙️ More</button>
+    </div>
+    
+    <!-- Charts Tab -->
+    <div class="tab-content active" id="chartsTab">
+        <div class="chart-container">
+            <div class="chart-title"><span>🌡️</span> Temperature (24h)</div>
+            <canvas id="tempChart" height="140"></canvas>
+        </div>
+        <div class="chart-container">
+            <div class="chart-title"><span>💧</span> Humidity (24h)</div>
+            <canvas id="humChart" height="140"></canvas>
+        </div>
+        <div class="chart-container">
+            <div class="chart-title"><span>💨</span> Wind Speed (24h)</div>
+            <canvas id="windChart" height="140"></canvas>
+        </div>
+        <div class="chart-container">
+            <div class="chart-title"><span>🧭</span> Wind Direction Distribution</div>
+            <canvas id="windDirChart" height="180"></canvas>
+        </div>
+        <div class="chart-container">
+            <div class="chart-title"><span>🌧️</span> Rainfall (24h)</div>
+            <canvas id="rainChart" height="140"></canvas>
+        </div>
+        <div class="chart-container">
+            <div class="chart-title"><span>☀️</span> UV Index (24h)</div>
+            <canvas id="uvChart" height="140"></canvas>
+        </div>
+    </div>
+    
+    <!-- Stats Tab -->
+    <div class="tab-content" id="statsTab">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h4>🌡️ Temperature</h4>
+                <div class="stat-row"><span class="label">High:</span><span class="value high" id="tempHigh">--</span></div>
+                <div class="stat-row"><span class="label">Low:</span><span class="value low" id="tempLow">--</span></div>
+                <div class="stat-row"><span class="label">Avg:</span><span class="value avg" id="tempAvg">--</span></div>
+            </div>
+            <div class="stat-card">
+                <h4>💧 Humidity</h4>
+                <div class="stat-row"><span class="label">High:</span><span class="value high" id="humHigh">--</span></div>
+                <div class="stat-row"><span class="label">Low:</span><span class="value low" id="humLow">--</span></div>
+                <div class="stat-row"><span class="label">Avg:</span><span class="value avg" id="humAvg">--</span></div>
+            </div>
+            <div class="stat-card">
+                <h4>💨 Wind Speed</h4>
+                <div class="stat-row"><span class="label">Max:</span><span class="value high" id="windHigh">--</span></div>
+                <div class="stat-row"><span class="label">Min:</span><span class="value low" id="windLow">--</span></div>
+                <div class="stat-row"><span class="label">Avg:</span><span class="value avg" id="windAvg">--</span></div>
+            </div>
+            <div class="stat-card">
+                <h4>☀️ UV Index</h4>
+                <div class="stat-row"><span class="label">Max:</span><span class="value high" id="uvHigh">--</span></div>
+                <div class="stat-row"><span class="label">Min:</span><span class="value low" id="uvLow">--</span></div>
+                <div class="stat-row"><span class="label">Avg:</span><span class="value avg" id="uvAvg">--</span></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- History Tab -->
+    <div class="tab-content" id="historyTab">
+        <div class="table-container">
+            <div class="table-header">
+                <div class="table-title">📋 Recent Readings</div>
+                <div class="filter-row">
+                    <label>From:</label>
+                    <input type="date" id="startDate">
+                    <label>To:</label>
+                    <input type="date" id="endDate">
+                </div>
+                <div class="btn-group" style="margin: 5px 0;">
+                    <button class="btn btn-primary" onclick="filterByDateRange()" style="padding:5px 10px;">🔍 Filter</button>
+                    <button class="btn btn-secondary" onclick="clearFilter()" style="padding:5px 10px;">Clear</button>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Temp</th>
+                        <th>Hum</th>
+                        <th>Wind</th>
+                        <th>Dir</th>
+                        <th>Rain</th>
+                        <th>UV</th>
+                        <th>RSSI</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTableBody">
+                    <tr><td colspan="8" class="loading">Loading data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- More Tab -->
+    <div class="tab-content" id="moreTab">
+        <div class="btn-group">
+            <button class="btn btn-success" onclick="exportTodayCSV()">📥 Today's CSV</button>
+            <button class="btn btn-primary" onclick="exportAllCSV()">📥 All Data</button>
+            <button class="btn btn-danger" onclick="showResetModal()">🗑️ Reset</button>
+        </div>
+        <div class="signal-info" style="margin-top: 12px;">
+            <strong>About</strong><br>
+            Weather Station PWA v1.0<br>
+            Agricultural Monitoring System
+        </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+        Weather Station • Agricultural Monitoring<br>
+        © 2026 Research Project
+    </div>
+    
+    <!-- Install Prompt -->
+    <div class="install-prompt" id="installPrompt">
+        <p>📱 Add to Home Screen for quick access!</p>
+        <button class="install-btn" onclick="installApp()">Install</button>
+        <button class="dismiss-btn" onclick="dismissInstall()">Later</button>
+    </div>
+    
+    <!-- Reset Modal -->
+    <div class="modal" id="resetModal">
+        <div class="modal-content">
+            <h3>⚠️ Reset All Data?</h3>
+            <p>This will permanently delete ALL weather data. Cannot be undone!</p>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="hideResetModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="resetAllData()">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUFlR0TbOxjUB2tUqzm99Q7s51BLMZCMA",
+            authDomain: "weather-monitoring-syste-2db7a.firebaseapp.com",
+            databaseURL: "https://weather-monitoring-syste-2db7a-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "weather-monitoring-syste-2db7a",
+            storageBucket: "weather-monitoring-syste-2db7a.firebasestorage.app",
+            messagingSenderId: "972477467288",
+            appId: "1:972477467288:web:eb8837ffde1b715e5f1eed"
+        };
+
+        // Initialize Firebase
+        let database;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            console.log("Firebase initialized");
+        } catch (error) {
+            console.error("Firebase error:", error);
+            showError("Failed to connect to Firebase");
+        }
+
+        // Chart instances
+        let tempChart, humChart, windChart, windDirChart, rainChart, uvChart;
+        
+        // Data storage
+        const chartData = { labels: [], temp: [], hum: [], wind: [], rain: [], uv: [] };
+        const windDirCounts = { N: 0, NE: 0, E: 0, SE: 0, S: 0, SW: 0, W: 0, NW: 0 };
+
+        // Compass animation variables
+        let _compassCurrent = null;
+        let _compassTarget = null;
+        let _compassAnimating = false;
+
+        // PWA Install
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            setTimeout(() => {
+                document.getElementById('installPrompt').classList.add('show');
+            }, 3000);
+        });
+
+        function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(() => {
+                    deferredPrompt = null;
+                    document.getElementById('installPrompt').classList.remove('show');
+                });
+            }
+        }
+
+        function dismissInstall() {
+            document.getElementById('installPrompt').classList.remove('show');
+        }
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(() => console.log('SW registered'))
+                .catch(err => console.log('SW error:', err));
+        }
+
+        // Show error message
+        function showError(message) {
+            document.getElementById('errorContainer').innerHTML = `<div class="error">⚠️ ${message}</div>`;
+        }
+
+        // Get UV level
+        function getUVLevel(uv) {
+            if (uv <= 2) return 'Low';
+            if (uv <= 5) return 'Moderate';
+            if (uv <= 7) return 'High';
+            if (uv <= 10) return 'Very High';
+            return 'Extreme';
+        }
+
+        // Format time from timestamp
+        function formatTime(timestamp) {
+            const hours = Math.floor((timestamp % 86400) / 3600);
+            const minutes = Math.floor((timestamp % 3600) / 60);
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+
+        // Live time update
+        function updateLiveTime() {
+            const now = new Date();
+            document.getElementById('liveTime').textContent = now.toLocaleTimeString();
+            document.getElementById('liveDate').textContent = now.toLocaleDateString('en-US', {
+                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+            });
+        }
+        setInterval(updateLiveTime, 1000);
+        updateLiveTime();
+
+        // Tab navigation
+        function showTab(name) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(name + 'Tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Compass update with smooth animation
+        function updateCompass(degrees) {
+            const arrow = document.getElementById('compassArrow');
+            if (!arrow) return;
+            
+            degrees = Number(degrees);
+            if (Number.isNaN(degrees)) return;
+            
+            const target = ((degrees % 360) + 360) % 360;
+            
+            if (_compassCurrent === null) {
+                _compassCurrent = target;
+                _compassTarget = target;
+                arrow.style.transform = `translateX(-50%) rotate(${_compassCurrent}deg)`;
+                return;
+            }
+            
+            let delta = ((target - _compassCurrent + 540) % 360) - 180;
+            _compassTarget = _compassCurrent + delta;
+            
+            if (!_compassAnimating) startCompassAnimation(arrow);
+        }
+
+        function startCompassAnimation(arrow) {
+            _compassAnimating = true;
+            function step() {
+                const diff = _compassTarget - _compassCurrent;
+                _compassCurrent += diff * 0.18;
+                if (Math.abs(diff) < 0.2) _compassCurrent = _compassTarget;
+                arrow.style.transform = `translateX(-50%) rotate(${_compassCurrent}deg)`;
+                if (Math.abs(_compassTarget - _compassCurrent) > 0.2) {
+                    requestAnimationFrame(step);
+                } else {
+                    _compassAnimating = false;
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        // Initialize all 6 charts
+        function initCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#8892b0', maxTicksLimit: 6, font: { size: 8 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: '#8892b0', font: { size: 8 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            };
+
+            // Temperature Chart
+            tempChart = new Chart(document.getElementById('tempChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.2)', tension: 0.4, fill: true, pointRadius: 0 }] },
+                options: commonOptions
+            });
+
+            // Humidity Chart
+            humChart = new Chart(document.getElementById('humChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#4ecdc4', backgroundColor: 'rgba(78,205,196,0.2)', tension: 0.4, fill: true, pointRadius: 0 }] },
+                options: commonOptions
+            });
+
+            // Wind Speed Chart
+            windChart = new Chart(document.getElementById('windChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#45b7d1', backgroundColor: 'rgba(69,183,209,0.2)', tension: 0.4, fill: true, pointRadius: 0 }] },
+                options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, beginAtZero: true } } }
+            });
+
+            // Wind Direction Pie Chart
+            windDirChart = new Chart(document.getElementById('windDirChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],
+                    datasets: [{ data: [0,0,0,0,0,0,0,0], backgroundColor: ['#ff6b6b','#ffa502','#ffeaa7','#7bed9f','#70a1ff','#5352ed','#a29bfe','#ff6b81'] }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#8892b0', font: { size: 9 } } } } }
+            });
+
+            // Rainfall Chart
+            rainChart = new Chart(document.getElementById('rainChart'), {
+                type: 'bar',
+                data: { labels: [], datasets: [{ data: [], backgroundColor: 'rgba(150,206,180,0.7)', borderColor: '#96ceb4', borderWidth: 1 }] },
+                options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, beginAtZero: true } } }
+            });
+
+            // UV Index Chart
+            uvChart = new Chart(document.getElementById('uvChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#ffeaa7', backgroundColor: 'rgba(255,234,167,0.2)', tension: 0.4, fill: true, pointRadius: 0 }] },
+                options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, beginAtZero: true } } }
+            });
+        }
+
+        // Update dashboard with latest data
+        function updateDashboard(data) {
+            if (!data) return;
+
+            document.getElementById('connectionStatus').innerHTML = '<span class="status-dot online"></span><span>Connected</span>';
+            
+            document.getElementById('temperature').textContent = data.temperature !== undefined ? data.temperature.toFixed(1) : '--';
+            document.getElementById('humidity').textContent = data.humidity !== undefined ? data.humidity : '--';
+            document.getElementById('windSpeed').textContent = data.windSpeed !== undefined ? data.windSpeed.toFixed(2) : '--';
+            document.getElementById('windDirection').textContent = data.windDirection || '--';
+            document.getElementById('windDegrees').textContent = data.windDegrees !== undefined ? data.windDegrees : '--';
+            document.getElementById('totalRainfall').textContent = data.totalRainfall !== undefined ? data.totalRainfall.toFixed(1) : '--';
+            document.getElementById('uvIndex').textContent = data.uvIndex !== undefined ? data.uvIndex.toFixed(2) : '--';
+            document.getElementById('uvLevel').textContent = data.uvIndex !== undefined ? getUVLevel(data.uvIndex) : '--';
+            document.getElementById('rssi').textContent = data.rssi !== undefined ? data.rssi : '--';
+            document.getElementById('snr').textContent = data.snr !== undefined ? data.snr.toFixed(1) : '--';
+            document.getElementById('lastUpdate').textContent = data.receivedAt || new Date().toLocaleTimeString();
+
+            // Node status
+            const nodeStatus = document.getElementById('nodeStatus');
+            let lastSeen = null;
+            let usedFallback = false;
+
+            if (data.receivedAt) {
+                const dt = new Date(data.receivedAt);
+                if (!isNaN(dt.getTime()) && dt.getFullYear() >= 2000) lastSeen = dt;
+            }
+            if (!lastSeen && data.timestamp) {
+                const t = Number(data.timestamp);
+                const ms = t < 1e11 ? t * 1000 : t;
+                const dt = new Date(ms);
+                if (!isNaN(dt.getTime()) && dt.getFullYear() >= 2000) lastSeen = dt;
+            }
+            if (!lastSeen && (data.temperature !== undefined || data.rssi !== undefined)) {
+                lastSeen = new Date();
+                usedFallback = true;
+            }
+
+            if (lastSeen) {
+                const seconds = Math.floor((Date.now() - lastSeen.getTime()) / 1000);
+                const ageText = seconds < 60 ? '<1m' : seconds < 3600 ? `${Math.floor(seconds/60)}m` : `${Math.floor(seconds/3600)}h`;
+                const online = seconds < 300;
+                const via = (data.rssi !== undefined) ? '(LoRa)' : '';
+                const fallbackBadge = usedFallback ? '<span class="node-fallback">no ts</span>' : '';
+                nodeStatus.innerHTML = `<span class="status-dot ${online ? 'online' : 'offline'}"></span><span>Node 1: ${online ? 'Live' : 'Off'} ${via} ${ageText}${fallbackBadge}</span>`;
+            }
+
+            // Compass
+            if (data.windDegrees !== undefined) updateCompass(data.windDegrees);
+
+            // Alerts
+            const alertBox = document.getElementById('alertBox');
+            if (data.alerts && data.alerts.length > 0) {
+                alertBox.innerHTML = `<div class="alert-box">⚠️ ${data.alerts.replace(/,/g, ' | ')}</div>`;
+            } else {
+                alertBox.innerHTML = '';
+            }
+        }
+
+        // Update statistics
+        function updateStatistics(allData) {
+            if (!allData) return;
+            let temps = [], hums = [], winds = [], uvs = [];
+            
+            Object.values(allData).forEach(dayData => {
+                Object.values(dayData).forEach(r => {
+                    if (r.temperature && r.temperature > -900) temps.push(r.temperature);
+                    if (r.humidity && r.humidity > -900) hums.push(r.humidity);
+                    if (r.windSpeed !== undefined) winds.push(r.windSpeed);
+                    if (r.uvIndex !== undefined) uvs.push(r.uvIndex);
+                });
+            });
+            
+            if (temps.length) {
+                document.getElementById('tempHigh').textContent = Math.max(...temps).toFixed(1) + '°C';
+                document.getElementById('tempLow').textContent = Math.min(...temps).toFixed(1) + '°C';
+                document.getElementById('tempAvg').textContent = (temps.reduce((a,b) => a+b, 0) / temps.length).toFixed(1) + '°C';
+            }
+            if (hums.length) {
+                document.getElementById('humHigh').textContent = Math.max(...hums) + '%';
+                document.getElementById('humLow').textContent = Math.min(...hums) + '%';
+                document.getElementById('humAvg').textContent = (hums.reduce((a,b) => a+b, 0) / hums.length).toFixed(0) + '%';
+            }
+            if (winds.length) {
+                document.getElementById('windHigh').textContent = Math.max(...winds).toFixed(2) + ' m/s';
+                document.getElementById('windLow').textContent = Math.min(...winds).toFixed(2) + ' m/s';
+                document.getElementById('windAvg').textContent = (winds.reduce((a,b) => a+b, 0) / winds.length).toFixed(2) + ' m/s';
+            }
+            if (uvs.length) {
+                document.getElementById('uvHigh').textContent = Math.max(...uvs).toFixed(2);
+                document.getElementById('uvLow').textContent = Math.min(...uvs).toFixed(2);
+                document.getElementById('uvAvg').textContent = (uvs.reduce((a,b) => a+b, 0) / uvs.length).toFixed(2);
+            }
+        }
+
+        // Load all data
+        function loadAllData() {
+            database.ref('/weather_data').on('value', (snapshot) => {
+                const allData = snapshot.val();
+                const tbody = document.getElementById('dataTableBody');
+                
+                if (!allData) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="loading">No data available</td></tr>';
+                    document.getElementById('totalRecords').textContent = '0';
+                    return;
+                }
+                
+                // Reset chart data
+                chartData.labels = []; chartData.temp = []; chartData.hum = [];
+                chartData.wind = []; chartData.rain = []; chartData.uv = [];
+                Object.keys(windDirCounts).forEach(k => windDirCounts[k] = 0);
+                
+                let allReadings = [];
+                let totalCount = 0;
+                
+                // Collect all readings
+                Object.entries(allData).forEach(([date, dayData]) => {
+                    Object.entries(dayData).forEach(([timestamp, reading]) => {
+                        totalCount++;
+                        allReadings.push({ date, timestamp, ...reading });
+                        
+                        // Add to chart data (limit to 288 = 24 hours at 5min intervals)
+                        if (chartData.labels.length < 288) {
+                            const time = reading.receivedAt || formatTime(reading.timestamp);
+                            chartData.labels.push(time);
+                            chartData.temp.push(reading.temperature > -900 ? reading.temperature : null);
+                            chartData.hum.push(reading.humidity > -900 ? reading.humidity : null);
+                            chartData.wind.push(reading.windSpeed);
+                            chartData.rain.push(reading.rainfall || 0);
+                            chartData.uv.push(reading.uvIndex);
+                            
+                            // Count wind directions
+                            if (reading.windDirection && windDirCounts[reading.windDirection] !== undefined) {
+                                windDirCounts[reading.windDirection]++;
+                            }
+                        }
+                    });
+                });
+                
+                document.getElementById('totalRecords').textContent = totalCount;
+                updateStatistics(allData);
+                
+                // Sort and update table
+                allReadings.sort((a, b) => b.timestamp - a.timestamp);
+                tbody.innerHTML = '';
+                allReadings.slice(0, 20).forEach(r => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${r.receivedAt || formatTime(r.timestamp)}</td>
+                        <td>${r.temperature > -900 ? r.temperature?.toFixed(1) : 'ERR'}</td>
+                        <td>${r.humidity > -900 ? r.humidity : 'ERR'}</td>
+                        <td>${r.windSpeed?.toFixed(2) || '--'}</td>
+                        <td>${r.windDirection || '--'}</td>
+                        <td>${r.totalRainfall?.toFixed(1) || '0'}</td>
+                        <td>${r.uvIndex?.toFixed(2) || '--'}</td>
+                        <td>${r.rssi || '--'}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Update all charts
+                tempChart.data.labels = chartData.labels;
+                tempChart.data.datasets[0].data = chartData.temp;
+                tempChart.update();
+                
+                humChart.data.labels = chartData.labels;
+                humChart.data.datasets[0].data = chartData.hum;
+                humChart.update();
+                
+                windChart.data.labels = chartData.labels;
+                windChart.data.datasets[0].data = chartData.wind;
+                windChart.update();
+                
+                windDirChart.data.datasets[0].data = Object.values(windDirCounts);
+                windDirChart.update();
+                
+                rainChart.data.labels = chartData.labels;
+                rainChart.data.datasets[0].data = chartData.rain;
+                rainChart.update();
+                
+                uvChart.data.labels = chartData.labels;
+                uvChart.data.datasets[0].data = chartData.uv;
+                uvChart.update();
+            });
+        }
+
+        // Listen for latest data
+        function startListening() {
+            database.ref('/latest').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) updateDashboard(data);
+            }, (error) => {
+                showError("Connection error: " + error.message);
+                document.getElementById('connectionStatus').innerHTML = '<span class="status-dot offline"></span><span>Disconnected</span>';
+            });
+        }
+
+        // Filter by date range
+        function filterByDateRange() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            if (!startDate || !endDate) { alert('Select both dates'); return; }
+            
+            chartData.labels = []; chartData.temp = []; chartData.hum = [];
+            chartData.wind = []; chartData.rain = []; chartData.uv = [];
+            Object.keys(windDirCounts).forEach(k => windDirCounts[k] = 0);
+            
+            database.ref('/weather_data').once('value', (snapshot) => {
+                const allData = snapshot.val();
+                const tbody = document.getElementById('dataTableBody');
+                if (!allData) { tbody.innerHTML = '<tr><td colspan="8">No data</td></tr>'; return; }
+                
+                let filtered = [];
+                Object.entries(allData).forEach(([date, dayData]) => {
+                    if (date >= startDate && date <= endDate) {
+                        Object.entries(dayData).forEach(([ts, r]) => {
+                            filtered.push({ date, timestamp: ts, ...r });
+                            const time = r.receivedAt || formatTime(r.timestamp);
+                            chartData.labels.push(date.substring(5) + ' ' + time);
+                            chartData.temp.push(r.temperature > -900 ? r.temperature : null);
+                            chartData.hum.push(r.humidity > -900 ? r.humidity : null);
+                            chartData.wind.push(r.windSpeed);
+                            chartData.rain.push(r.rainfall || 0);
+                            chartData.uv.push(r.uvIndex);
+                            if (r.windDirection && windDirCounts[r.windDirection] !== undefined) windDirCounts[r.windDirection]++;
+                        });
+                    }
+                });
+                
+                document.getElementById('totalRecords').textContent = filtered.length;
+                filtered.sort((a, b) => b.timestamp - a.timestamp);
+                
+                tbody.innerHTML = '';
+                if (filtered.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8">No data for selected range</td></tr>';
+                } else {
+                    filtered.slice(0, 50).forEach(r => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td>${r.date} ${r.receivedAt || ''}</td><td>${r.temperature?.toFixed(1) || 'ERR'}</td><td>${r.humidity || 'ERR'}</td><td>${r.windSpeed?.toFixed(2) || '--'}</td><td>${r.windDirection || '--'}</td><td>${r.totalRainfall?.toFixed(1) || '0'}</td><td>${r.uvIndex?.toFixed(2) || '--'}</td><td>${r.rssi || '--'}</td>`;
+                        tbody.appendChild(row);
+                    });
+                }
+                
+                // Update charts
+                tempChart.data.labels = chartData.labels; tempChart.data.datasets[0].data = chartData.temp; tempChart.update();
+                humChart.data.labels = chartData.labels; humChart.data.datasets[0].data = chartData.hum; humChart.update();
+                windChart.data.labels = chartData.labels; windChart.data.datasets[0].data = chartData.wind; windChart.update();
+                windDirChart.data.datasets[0].data = Object.values(windDirCounts); windDirChart.update();
+                rainChart.data.labels = chartData.labels; rainChart.data.datasets[0].data = chartData.rain; rainChart.update();
+                uvChart.data.labels = chartData.labels; uvChart.data.datasets[0].data = chartData.uv; uvChart.update();
+            });
+        }
+
+        // Clear filter
+        function clearFilter() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('startDate').value = today;
+            document.getElementById('endDate').value = today;
+            loadAllData();
+        }
+
+        // Export today's CSV
+        function exportTodayCSV() {
+            const today = new Date().toISOString().split('T')[0];
+            database.ref(`/weather_data/${today}`).once('value', (snapshot) => {
+                const data = snapshot.val();
+                if (!data) { alert('No data for today'); return; }
+                let csv = 'Time,Temperature,Humidity,WindSpeed,WindDirection,WindDegrees,Rainfall,TotalRainfall,UVIndex,RSSI,SNR\n';
+                Object.values(data).forEach(r => {
+                    csv += `${r.receivedAt || ''},${r.temperature},${r.humidity},${r.windSpeed},${r.windDirection},${r.windDegrees},${r.rainfall || 0},${r.totalRainfall},${r.uvIndex},${r.rssi || ''},${r.snr || ''}\n`;
+                });
+                downloadCSV(csv, `weather_${today}.csv`);
+            });
+        }
+
+        // Export all CSV
+        function exportAllCSV() {
+            database.ref('/weather_data').once('value', (snapshot) => {
+                const allData = snapshot.val();
+                if (!allData) { alert('No data available'); return; }
+                let csv = 'Date,Time,Temperature,Humidity,WindSpeed,WindDirection,WindDegrees,Rainfall,TotalRainfall,UVIndex,RSSI,SNR\n';
+                Object.entries(allData).forEach(([date, dayData]) => {
+                    Object.values(dayData).forEach(r => {
+                        csv += `${date},${r.receivedAt || ''},${r.temperature},${r.humidity},${r.windSpeed},${r.windDirection},${r.windDegrees},${r.rainfall || 0},${r.totalRainfall},${r.uvIndex},${r.rssi || ''},${r.snr || ''}\n`;
+                    });
+                });
+                downloadCSV(csv, `weather_all_${new Date().toISOString().split('T')[0]}.csv`);
+            });
+        }
+
+        // Download CSV helper
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Reset modal
+        function showResetModal() { document.getElementById('resetModal').classList.add('show'); }
+        function hideResetModal() { document.getElementById('resetModal').classList.remove('show'); }
+
+        // Reset all data
+        function resetAllData() {
+            Promise.all([
+                database.ref('/weather_data').remove(),
+                database.ref('/latest').remove()
+            ]).then(() => {
+                alert('All data deleted!');
+                hideResetModal();
+                location.reload();
+            }).catch(err => {
+                alert('Error: ' + err.message);
+                hideResetModal();
+            });
+        }
+
+        // Initialize
+        window.onload = function() {
+            initCharts();
+            startListening();
+            loadAllData();
+            
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('startDate').value = today;
+            document.getElementById('endDate').value = today;
+        };
+    </script>
+</body>
+</html>
